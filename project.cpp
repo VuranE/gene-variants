@@ -57,6 +57,33 @@ vector<fs::path> iterateDirectory(const string& dirPath){
     return files;
   }
 
+
+  //use spoa to generate consensus and msa of given sequences
+pair<string, vector<string>> consensusAndMSA(const vector<FastqRead>& reads){
+  auto alignmentEngine = spoa::AlignmentEngine::Create(
+      spoa::AlignmentType::kNW, 3, -5, -3);  // linear gaps
+
+  spoa::Graph graph{};
+
+  for (const auto& read : reads) {
+    auto alignment = alignment_engine->Align(read.sequence, graph);
+    graph.AddAlignment(alignment, read.sequence);
+  }
+
+  auto consensus = graph.GenerateConsensus();
+
+  auto msa = graph.GenerateMultipleSequenceAlignment();
+
+  return {consensus, msa};
+
+}
+
+//clustering of sequences in each file
+vector<string> runClustering(const vector<FastqRead>& reads){
+  auto [consensus, msa] = consensusAndMSA(reads);
+
+}
+
 int main(int argc, char** argv) {
 
   if(argc != 2){
@@ -67,15 +94,23 @@ int main(int argc, char** argv) {
   string sampleFolder = argv[1];
   vector<fs::path> filesToParse = iterateDirectory(sampleFolder);
 
-  vector<FastqRead> chosenSequences; //vector containing all sequences in all files that are of desired length
   for (const auto& filePath : filesToParse) {
     vector<FastqRead> reads = parseFile(filePath);
-    chosenSequences.insert(chosenSequences.end(), reads.begin(), reads.end());
+    
+    vector<string> consensusVariants = runClustering(reads);
+
+    for (size_t i = 0; i < consensusVariants.size() && i < 4; ++i) {
+      cout << ">consensus_" << file.filename().string() << "_v" << i + 1 << endl;
+      cout << consensusVariants[i] << endl;
+    }
   }
 
   /*
     GLOBALNO PORAVNANJE NEEDLEMANWUNSCH
     vidi: https://github.com/francescoborando/Sequence_Alignment/blob/main/NeedlemanWunsch.cpp
+
+    POGLAVLJE 4.5
+    https://repozitorij.vef.unizg.hr/islandora/object/vef%3A641
   */
 
 
