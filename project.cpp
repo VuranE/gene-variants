@@ -66,7 +66,7 @@ pair<string, vector<string>> consensusAndMSA(const vector<FastqRead>& reads){
   spoa::Graph graph{};
 
   for (const auto& read : reads) {
-    auto alignment = alignment_engine->Align(read.sequence, graph);
+    auto alignment = alignmentEngine->Align(read.sequence, graph);
     graph.AddAlignment(alignment, read.sequence);
   }
 
@@ -81,6 +81,12 @@ pair<string, vector<string>> consensusAndMSA(const vector<FastqRead>& reads){
 //clustering of sequences in each file
 vector<string> runClustering(const vector<FastqRead>& reads){
   auto [consensus, msa] = consensusAndMSA(reads);
+
+ 
+  //just for testing
+  vector<string> v;
+  v.push_back("Hi");
+  return v;
 
 }
 
@@ -100,7 +106,7 @@ int main(int argc, char** argv) {
     vector<string> consensusVariants = runClustering(reads);
 
     for (size_t i = 0; i < consensusVariants.size() && i < 4; ++i) {
-      cout << ">consensus_" << file.filename().string() << "_v" << i + 1 << endl;
+      cout << ">consensus_" << filePath.filename().string() << "_v" << i + 1 << endl;
       cout << consensusVariants[i] << endl;
     }
   }
