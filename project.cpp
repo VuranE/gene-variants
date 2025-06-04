@@ -41,9 +41,6 @@ vector<FastqRead> parseFile(const string& filename, size_t targetLength = 296){
     if(read.sequence.length() == targetLength)
       reads.push_back(read);
   }
-  
-  
-
 
   return reads;
 
@@ -60,8 +57,6 @@ vector<fs::path> iterateDirectory(const string& dirPath){
           
       }
     }
-
-    
     return files;
   }
 
@@ -70,13 +65,12 @@ vector<fs::path> iterateDirectory(const string& dirPath){
 pair<string, vector<string>> consensusAndMSA(const vector<FastqRead>& reads){
   cout << "calculating consensus and msa" << endl;
   auto alignmentEngine = spoa::AlignmentEngine::Create(
-      spoa::AlignmentType::kNW, 0, -1, -100);  
+      spoa::AlignmentType::kNW, 0, -1, -100); 
 
   spoa::Graph graph{};
  
   
   for (const auto& read : reads) {
-    
     auto alignment = alignmentEngine->Align(read.sequence, graph);
     graph.AddAlignment(alignment, read.sequence);
   }
@@ -88,6 +82,51 @@ pair<string, vector<string>> consensusAndMSA(const vector<FastqRead>& reads){
   return {consensus, msa};
 
 }
+
+//
+vector<vector<string>> clusteringAlgorithm(const vector<string>& msa, size_t k, size_t s) {
+    vector<vector<string>> clusters;
+
+    for (const string& seq : msa) {
+        bool added = false;
+
+        for (auto& cluster : clusters) {
+            bool isSimilar = true;
+            for (const string& member : cluster) {
+                size_t diff = 0;
+                for (size_t i = 0; i < seq.size(); ++i) {
+                    if (seq[i] != member[i]) ++diff;
+                    if (diff >= k) {
+                        isSimilar = false;
+                        break;
+                    }
+                }
+                if (!isSimilar) break;
+            }
+
+            if (isSimilar) {
+                cluster.push_back(seq);
+                added = true;
+                break;
+            }
+        }
+
+        if (!added) {
+            clusters.push_back({seq}); // generate new cluster
+        }
+    }
+
+    // filter only clusters bigger than "s" parameter
+    vector<vector<string>> filteredClusters;
+    for (const auto& cluster : clusters) {
+        if (cluster.size() > s) {
+            filteredClusters.push_back(cluster);
+        }
+    }
+
+    return filteredClusters;
+}
+
 
 int main(int argc, char** argv) {
 
@@ -110,8 +149,21 @@ int main(int argc, char** argv) {
 
   //use spoa to get consensus and msa
   auto [consensus, msa] = consensusAndMSA(chosenSequences);
+
+  cout << consensus << endl;
+
+  vector<vector<string>> clusters = clusteringAlgorithm(msa, 12, 100);
   
-  cout << consensus;
+  int clusterCount = 1;
+  for(vector<string> cluster: clusters){
+    cout << "Cluster no." << clusterCount++ << endl;
+    cout << "sequences:" << endl;
+
+    int sequenceCount = 1;
+    for(string sequence : cluster){
+      cout << sequenceCount++ << ") " << sequence << endl;
+    }
+  }
 
   /*
     POGLAVLJE 4.5
