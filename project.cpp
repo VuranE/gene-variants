@@ -20,7 +20,7 @@ struct FastqRead {
   It takes filename and desired length of sequences, parses whole file, and only returns vector<FastqRead> only containing sequences of 
   desired length.*/
 vector<FastqRead> parseFile(const string& filename, size_t targetLength = 296){
-  cout << "parser" << endl;
+  //cout << "parser" << endl;
   vector<FastqRead> reads;
   ifstream file(filename);
 
@@ -85,55 +85,57 @@ spoa::Graph generateGraph(const vector<std::string>& reads){
   return graph;
 }
 
-//
-vector<vector<string>> clusteringAlgorithm(const vector<string>& msa, size_t k, size_t s) {
-    vector<vector<string>> clusters;
 
-    for (const string& seq : msa) {
-        bool added = false;
+// Hamming distance (number of mismatches)
+size_t hammingDistance(const string &a, const string &b) {
+  size_t dist = 0;
+  for (size_t i = 0; i < a.size(); ++i)
+    if (a[i] != b[i]) ++dist;
+  return dist;
+}
 
-        for (auto& cluster : clusters) {
-            bool isSimilar = true;
-            for (const string& member : cluster) {
-                size_t diff = 0;
-                for (size_t i = 0; i < seq.size(); ++i) {
-                    if (seq[i] != member[i]) ++diff;
-                    if (diff >= k) {
-                        isSimilar = false;
-                        break;
-                    }
-                }
-                if (!isSimilar) break;
-            }
+//iterates over reading and generates clusters
+//k = number of missmatches tolerated for one cluster
+//s = min nuber of cluster members
 
-            if (isSimilar) {
-                cluster.push_back(seq);
-                added = true;
-                break;
-            }
-        }
+vector<vector<string> > clusteringAlgorithm(const vector<string> &readings, size_t k, size_t minClusterSize) {
+  vector<vector<string> > clusters;
 
-        if (!added) {
-            clusters.push_back({seq}); // generate new cluster
-        }
+  for (const string &seq: readings) {
+    bool added = false;
+
+    // Try adding to an existing cluster
+    for (auto &cluster: clusters) {
+      // Compare to the cluster's representative (first sequence)
+      if (hammingDistance(seq, cluster[0]) <= k) {
+        cluster.push_back(seq);
+        added = true;
+        break;
+      }
     }
 
-    // filter only clusters bigger than "s" parameter
-    vector<vector<string>> filteredClusters;
-    for (const auto& cluster : clusters) {
-        if (cluster.size() > s) {
-            filteredClusters.push_back(cluster);
-        }
+    // If not similar to any existing cluster, create new cluster
+    if (!added) {
+      clusters.push_back({seq});
     }
+  }
 
-    return filteredClusters;
+  // Filter out small clusters
+  vector<vector<string> > filtered;
+  cout << "Unfiltered clusters count: " << clusters.size() << endl;
+  for (const auto& cluster : clusters){
+    cout << "  Cluster size: " << cluster.size() << endl;
+    if (cluster.size() > minClusterSize)
+      filtered.push_back(cluster);
+  }
+
+  return filtered;
 }
 
 
-int main(int argc, char** argv) {
-
-  if(argc != 2){
-    cerr << "Missing samples folder path!" << endl;
+int main(int argc, char **argv) {
+  if (argc < 3) {
+    cerr << "Missing folder path/s!" << endl;
     return 1;
   }
 
@@ -150,11 +152,28 @@ int main(int argc, char** argv) {
       chosenSequences.push_back(read.sequence);
     }
   }
+  string GT_Folder = argv[2];
+  vector<std::string> GT_Sequences;
+  vector<fs::path> GT_Files = iterateDirectory(GT_Folder);
+  for (const auto& GT_filePath : GT_Files) {
+    vector<FastqRead> reads = parseFile(GT_filePath.string());
+    for (const auto& read : reads) {
+      GT_Sequences.push_back(read.sequence);
+    }
+  }
 
+  vector<vector<string>> clusters = clusteringAlgorithm(GT_Sequences, 100, 0);
+  cout << clusters.size() << endl;
+
+
+  /*
+  for (auto& cluster : clusters) {
+
+  }
   auto graph = generateGraph(chosenSequences);
 
   //use spoa to get consensus and msa
-  //auto consensus = graph.GenerateConsensus();
+  auto consensus = graph.GenerateConsensus();
   auto msa = graph.GenerateMultipleSequenceAlignment();
 
   cout << "msa:" << endl;
@@ -162,7 +181,9 @@ int main(int argc, char** argv) {
     cout << seq << endl;
   }
 
-  vector<vector<string>> clusters = clusteringAlgorithm(msa, 12, 100);
+  */
+
+  /*vector<vector<string>> clusters = clusteringAlgorithm(msa, 12, 100);
   
   int clusterCount = 1;
   for(vector<string> cluster: clusters){
@@ -173,7 +194,7 @@ int main(int argc, char** argv) {
     for(string sequence : cluster){
       cout << sequenceCount++ << ") " << sequence << endl;
     }
-  }
+  }  */
 
   /*
     POGLAVLJE 4.5
