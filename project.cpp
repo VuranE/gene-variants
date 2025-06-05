@@ -29,7 +29,8 @@ vector<FastqRead> parseFile(const string& filename, size_t targetLength = 296){
     return reads;
   }
 
-  
+
+  int n_longer = 0;
   string line;
   while (getline(file, line)){
     FastqRead read;
@@ -38,9 +39,15 @@ vector<FastqRead> parseFile(const string& filename, size_t targetLength = 296){
     getline(file, read.plus);
     getline(file, read.quality);
 
-    if(read.sequence.length() == targetLength)
+
+    if(read.sequence.length() == targetLength) {
       reads.push_back(read);
+    }
+    else {
+      n_longer++;
+    }
   }
+  //printf("n_longer: %d",n_longer);
 
   return reads;
 
@@ -52,7 +59,7 @@ vector<fs::path> iterateDirectory(const string& dirPath){
     vector<fs::path> files;
     for(const auto& entry : fs::directory_iterator(dirPath)){
       if(entry.path().extension() == ".fastq"){ //take into consideration only fastq files
-        if(entry.path().filename().string().compare(0, 1, "J") == 0) //take into consideration only files that starts with "J", indicating deer samples (can be changed for different purpouses)
+        if(entry.path().filename().string().compare(0, 1, "J") == 0) //take into consideration only files that starts with "J", indicating deer samples (can be changed for different purposes)
           files.push_back(entry.path());
           
       }
@@ -61,26 +68,21 @@ vector<fs::path> iterateDirectory(const string& dirPath){
   }
 
 
-  //use spoa to generate consensus and msa of given sequences
-pair<string, vector<string>> consensusAndMSA(const vector<FastqRead>& reads){
-  cout << "calculating consensus and msa" << endl;
+  //use spoa to generate graph from which consensus and MSA are calculated
+spoa::Graph generateGraph(const vector<std::string>& reads){
+  std::cout << "number of reads: " << reads.size() << std::endl;
+  cout << "generating graph..." << endl;
   auto alignmentEngine = spoa::AlignmentEngine::Create(
-      spoa::AlignmentType::kNW, 0, -1, -100); 
-
+      spoa::AlignmentType::kNW, 5, -4, -8);
+  cout << "DEBUG 1" << endl;
   spoa::Graph graph{};
- 
-  
-  for (const auto& read : reads) {
-    auto alignment = alignmentEngine->Align(read.sequence, graph);
-    graph.AddAlignment(alignment, read.sequence);
-  }
-  
-  auto consensus = graph.GenerateConsensus();
-  
-  auto msa = graph.GenerateMultipleSequenceAlignment();
-  
-  return {consensus, msa};
+  cout << "DEBUG 2" << endl;
 
+  for (const auto& read : reads) {
+    auto alignment = alignmentEngine->Align(read, graph);
+    graph.AddAlignment(alignment, read);
+  }
+  return graph;
 }
 
 //
@@ -140,17 +142,25 @@ int main(int argc, char** argv) {
 
   
   /*combine all acceptable sequences to one vector*/
-  vector<FastqRead> chosenSequences;
+  vector<std::string> chosenSequences;
   for (const auto& filePath : filesToParse) {
     cout << "parsing file " << filePath << endl;
-    vector<FastqRead> reads = parseFile(filePath);
-    chosenSequences.insert(chosenSequences.end(), reads.begin(), reads.end());
+    vector<FastqRead> reads = parseFile(filePath.string());
+    for (const auto& read : reads) {
+      chosenSequences.push_back(read.sequence);
+    }
   }
 
-  //use spoa to get consensus and msa
-  auto [consensus, msa] = consensusAndMSA(chosenSequences);
+  auto graph = generateGraph(chosenSequences);
 
-  cout << consensus << endl;
+  //use spoa to get consensus and msa
+  //auto consensus = graph.GenerateConsensus();
+  auto msa = graph.GenerateMultipleSequenceAlignment();
+
+  cout << "msa:" << endl;
+  for (const auto& seq : msa) {
+    cout << seq << endl;
+  }
 
   vector<vector<string>> clusters = clusteringAlgorithm(msa, 12, 100);
   
