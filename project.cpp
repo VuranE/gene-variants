@@ -92,8 +92,8 @@ vector<std::string> parseGT_File(const string& filename, size_t targetLength = 2
 vector<fs::path> iterateDirectory(const string& dirPath){
     vector<fs::path> files;
     for(const auto& entry : fs::directory_iterator(dirPath)){
-      if(entry.path().extension() == ".fastq" or entry.path().extension() == ".fasta"){ //take into consideration only fastq or fasta files
-        //if(entry.path().filename().string().compare(0, 1, "J") == 0) //take into consideration only files that starts with "J", indicating deer samples (can be changed for different purposes)
+      if(entry.path().extension() == ".fastq"){//or entry.path().extension() == ".fasta"){ //take into consideration only fastq or fasta files
+        if(entry.path().filename().string().compare(0, 1, "J") == 0) //take into consideration only files that starts with "J", indicating deer samples (can be changed for different purposes)
           files.push_back(entry.path());
       }
     }
@@ -291,7 +291,8 @@ std::unordered_map<std::string, std::vector<std::string>> get_readingsList(const
     string sample_id = filename.substr(0, filename.find("_"));
     //cout << "parsing file " << filePath<<" for sample: "<<sample_id<<endl;
     vector<FastqRead> reads = parseFile(filePath.string(), targetLength);//filter for deer sequences of length 296
-    for (const auto& read : reads) {
+      vector<std::string> chosenSequences;
+      for (const auto& read : reads) {
       chosenSequences.push_back(read.sequence);
     }
     if ( sample_id=="J30") {
@@ -304,24 +305,103 @@ std::unordered_map<std::string, std::vector<std::string>> get_readingsList(const
 
   return readingsList;
 }
+//function which generates corresponeding .msa files - replaces every sequence in sample with globally alligned sequence - does this for every sample
 //
-void generateMSA_File(const unordered_map<std::string, std::vector<std::string>> & readingsList) {
+void generateMSA_Files(const unordered_map<std::string, std::vector<std::string>> & readingsList) {
+    // Go up two levels from current directory to get to project root
+    fs::path project_root = fs::current_path().parent_path();
+    fs::path output_dir = project_root /"data"/ "msa_files";
 
+    // Create output directory if it doesn't exist
+    bool created = fs::create_directories(output_dir);
+    if (!created) {
+        return;
+    }
+    std::cout << "Output directory path: " << output_dir << endl;
+    std::cout << "Directory created :) "<<endl;
+
+    for (auto const& reading: readingsList) {
+        string sample_id = reading.first;
+        auto reads = reading.second;
+        auto graph = generateGraph(reads);
+
+        //use spoa to get consensus and msa
+        auto consensus = graph.GenerateConsensus();
+        auto msa = graph.GenerateMultipleSequenceAlignment();
+
+        fs::path output_path = output_dir / (sample_id + ".msa");
+
+        // Write MSA to file
+        std::ofstream outfile(output_path);
+        if (!outfile.is_open()) {
+            std::cerr << "Error opening file: " << output_path << std::endl;
+            continue;
+        }
+        // Write each sequence in the MSA to separate line
+        for (const auto& aligned_seq : msa) {
+            outfile << aligned_seq << '\n';
+        }
+        outfile.close();
+        std::cout << "Created MSA file: " << sample_id << ".msa" << " with " << msa.size() << " sequences\n";
+    }
 }
+
+//creates clusters list for each sample (takes data from msa file)
+std::unordered_map<std::string, std::vector<std::vector<std::string>>>
+ create_clusters(size_t maxDist = 10, size_t minClusterSize = 5) {
+    std::unordered_map<std::string, std::vector<std::vector<std::string>>>
+ clustered_samples;
+
+
+    fs::path project_root = fs::current_path().parent_path();
+    fs::path input_dir = project_root /"data"/ "msa_files";
+    if (!fs::exists(input_dir)) {
+        std::cerr << "Output directory does not exist.\n";
+        return clustered_samples;
+    }
+
+    for (const auto& entry : fs::directory_iterator(input_dir)) {//iterates over each directory
+        if (entry.path().extension() == ".msa") {
+            std::ifstream infile(entry.path());
+            if (!infile.is_open()) {
+                std::cerr << "Failed to open " << entry.path() << "\n";
+                continue;
+            }
+
+            std::vector<std::string> sequences;
+            std::string line;
+            while (std::getline(infile, line)) {
+                if (!line.empty())
+                    sequences.push_back(line);
+            }
+
+            infile.close();
+
+            // Cluster the sequences
+            auto clusters = clusteringAlgorithm(sequences, maxDist, minClusterSize);
+
+            // Get sample ID from filename
+            std::string sample_id = entry.path().stem().string(); // e.g., "J30"
+
+            clustered_samples[sample_id] = clusters;
+        }
+    }
+
+    return clustered_samples;
+}
+
 
 int main(int argc, char **argv) {
   if (argc < 3) {
     cerr << "Missing folder path/s!" << endl;
     return 1;
   }
-
   string sampleFolder = argv[1];
   vector<fs::path> filesToParse = iterateDirectory(sampleFolder);
 
-  
-  /*combine all acceptable sequences to one vector*/
-  //vector<vector<std::string>> readingsList;
+
   std::unordered_map<std::string, std::vector<std::string> > readingsList = get_readingsList(filesToParse, 296);
+
   /*
   cout << "readingsList size: " << readingsList.size() << endl;
   for (const auto& pair : readingsList) {
@@ -341,46 +421,16 @@ int main(int argc, char **argv) {
   //vector<vector<std::string>> GT_readingsList;
   vector<fs::path> GT_Files = iterateDirectory(GT_Folder);
   std::unordered_map<std::string, std::vector<std::string> > GT_readingsList = get_readingsList(GT_Files, 0);
+  //cout << "GT_readingsList size: " << GT_readingsList.size() << endl;
 
-
-  cout << "GT_readingsList size: " << GT_readingsList.size() << endl;
-  for (const auto& pair : GT_readingsList) {
-    cout << "readings size: " << pair.second.size() << endl;
-  }
-  //cluster_parameter_test(GT_readingsList[0]);
-  //vector<vector<string>> clusters = clusteringAlgorithm(GT_readingsList["J30B"], 12, 0);
-  //cout << clusters.size() << endl;
-
-  //cout << "readingsList[J30] size:"<< readingsList["J30"].size() << endl;
-  auto graph = generateGraph(readingsList["J30"]);
-
-  generateMSA_File(readingsList);
-
-  //use spoa to get consensus and msa
-  auto consensus = graph.GenerateConsensus();
-  auto msa = graph.GenerateMultipleSequenceAlignment();
-
-  cout << "msa size:"<< msa.size() << endl;/*
-  for (const auto& seq : msa) {
-    cout << seq << endl;
-  }*/
-
-  //cluster_parameter_test(msa);
-
-
-
-  /*vector<vector<string>> clusters = clusteringAlgorithm(msa, 12, 100);
-  
-  int clusterCount = 1;
-  for(vector<string> cluster: clusters){
-    cout << "Cluster no." << clusterCount++ << endl;
-    cout << "sequences:" << endl;
-
-    int sequenceCount = 1;
-    for(string sequence : cluster){
-      cout << sequenceCount++ << ") " << sequence << endl;
+  generateMSA_Files(readingsList);
+    //map with sample id as key and cluster list ad value
+    std::unordered_map<std::string, std::vector<std::vector<std::string>> > cluster_list = create_clusters(10, 0);
+    cout<<"cluster_list size: "<<cluster_list.size()<<endl;
+    cout<<"cluster lists sizes:"<<endl;
+    for (const auto& list: cluster_list) {
+        cout<<list.second.size()<<endl;
     }
-  }  */
 
   /*
     POGLAVLJE 4.5
