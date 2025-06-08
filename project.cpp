@@ -4,7 +4,7 @@
 #include <filesystem>
 #include <fstream>
 #include <unordered_map>
-
+#include <regex>
 #include <stdexcept>
 #include <utility>
 #include "spoa/spoa.hpp"
@@ -24,7 +24,6 @@ struct FastqRead {
   It takes filename and desired length of sequences, parses whole file, and only returns vector<FastqRead> only containing sequences of 
   desired length.*/
 vector<FastqRead> parseFile(const string& filename, size_t targetLength = 0){
-  //cout << "parser" << endl;
   vector<FastqRead> reads;
   ifstream file(filename);
 
@@ -50,7 +49,7 @@ vector<FastqRead> parseFile(const string& filename, size_t targetLength = 0){
       n_longer++;
     }
   }
-  //printf("n_diff: %d\n",n_longer);
+  
   if (reads.empty()) {
     cerr << "Error parsing file: " << filename <<"for target length:"<<targetLength<<endl;
   }
@@ -58,7 +57,7 @@ vector<FastqRead> parseFile(const string& filename, size_t targetLength = 0){
 
 }
 
-
+/*Function for parsing ground truth files. Maps ground_truth_sequence_id to ground_truth_sequence for later use*/
 std::unordered_map<std::string, std::string> parseGT_File(const std::string& filename, size_t targetLength = 249) {
     std::unordered_map<std::string, std::string> id_to_sequence;
 
@@ -95,7 +94,7 @@ std::unordered_map<std::string, std::string> parseGT_File(const std::string& fil
 vector<fs::path> iterateDirectory(const string& dirPath){
     vector<fs::path> files;
     for(const auto& entry : fs::directory_iterator(dirPath)){
-      if(entry.path().extension() == ".fastq"){//or entry.path().extension() == ".fasta"){ //take into consideration only fastq or fasta files
+      if(entry.path().extension() == ".fastq" || entry.path().extension() == ".fasta" ){//or entry.path().extension() == ".fasta"){ //take into consideration only fastq or fasta files
         if(entry.path().filename().string().compare(0, 1, "J") == 0) //take into consideration only files that starts with "J", indicating deer samples (can be changed for different purposes)
           files.push_back(entry.path());
       }
@@ -104,7 +103,7 @@ vector<fs::path> iterateDirectory(const string& dirPath){
   }
 
 
-  //use spoa to generate graph from which consensus and MSA are calculated
+//use spoa to generate graph from which consensus and MSA are calculated
 spoa::Graph generateGraph(const vector<std::string>& reads){
   std::cout << "number of reads: " << reads.size() << std::endl;
   cout << "generating graph..." << endl;
@@ -132,6 +131,7 @@ size_t hammingDistance(const std::string& a, const std::string& b) {
     return dist;
 }
 
+//calculates consensus sequence of given sequences
 std::string computeCentroid(const std::vector<std::string>& sequences) {
     if (sequences.empty()) return "";
 
@@ -244,6 +244,7 @@ std::vector<std::vector<std::string>> clusteringWithCentroid(
 //s = min nuber of cluster members
 
 vector<vector<string> > clusteringAlgorithm(const vector<string> &sequences, size_t k, size_t minClusterSize) {
+  
   vector<vector<string> > clusters;
 
   for (const string &seq: sequences) {
@@ -273,10 +274,9 @@ vector<vector<string> > clusteringAlgorithm(const vector<string> &sequences, siz
     if (cluster.size() > minClusterSize)
       filtered.push_back(cluster);
   }
-
+  
   return filtered;
 }
-
 
 void cluster_parameter_test(const vector<std::string> & readingsList) {
   for (size_t k = 0; k < 50; ++k) {
@@ -394,20 +394,45 @@ std::unordered_map<std::string, std::vector<std::vector<std::string>>>
 }
 
 
-void writeCentroidsToFasta(
-    const std::unordered_map<std::string, std::vector<std::vector<std::string>>>& cluster_list)
-{
-   fs::path project_root = fs::current_path().parent_path();
-    fs::path output_dir = project_root /"data"/ "consensus_files";
+//function for parsing .fasta file that contains centroids of all clusters. Returns vector<string> containing all sequences from given file
+std::vector<std::string> parse_fasta_sequences(const std::string& fasta_path) {
+    std::vector<std::string> sequences;
+    std::ifstream file(fasta_path);
+    if (!file.is_open()) {
+        throw std::runtime_error("Cannot open FASTA file: " + fasta_path);
+    }
 
-    // Create output directory if it doesn't exist
+    std::string line, current_seq;
+    while (std::getline(file, line)) {
+        if (line.empty()) continue;
+        if (line[0] == '>') {
+            if (!current_seq.empty()) {
+                sequences.push_back(current_seq);
+                current_seq.clear();
+            }
+        } else {
+            current_seq += line;
+        }
+    }
+    if (!current_seq.empty()) {
+        sequences.push_back(current_seq);
+    }
+
+    return sequences;
+}
+
+
+/*creates directory for saving FASTA files. For each sample file this function calculates consensus sequence for all of the clusters,
+ and saves them as FASTA files  */
+void writeCentroidsToFasta(const std::unordered_map<std::string, std::vector<std::vector<std::string>>>& cluster_list){
+  fs::path project_root = fs::current_path().parent_path();
+  fs::path output_dir = project_root /"data"/ "consensus_files";
+
     bool created = fs::create_directories(output_dir);
     if (!created) {
         return;
     }
-    std::cout << "Output directory path: " << output_dir << endl;
-    std::cout << "Directory created :) "<<endl;
-
+    
     for (const auto& sample_pair : cluster_list) {
         const std::string& sample_id = sample_pair.first;
         const std::vector<std::vector<std::string>>& clusters = sample_pair.second;
@@ -430,8 +455,74 @@ void writeCentroidsToFasta(
         }
 
         outfile.close();
-        std::cout << "FASTA fajl napisan: " << filename << "\n";
+       
     }
+}
+
+
+int smithWaterman(const std::string& seq1, const std::string& seq2, int match = 2, int mismatch = -1, int gap = -1) {
+    int m = seq1.size();
+    int n = seq2.size();
+    std::vector<std::vector<int>> dp(m + 1, std::vector<int>(n + 1, 0));
+
+    int maxScore = 0;
+
+    for (int i = 1; i <= m; ++i) {
+        for (int j = 1; j <= n; ++j) {
+            int score = (seq1[i - 1] == seq2[j - 1]) ? match : mismatch;
+            dp[i][j] = std::max({
+                0,
+                dp[i - 1][j - 1] + score,
+                dp[i - 1][j] + gap,
+                dp[i][j - 1] + gap
+            });
+            maxScore = std::max(maxScore, dp[i][j]);
+        }
+    }
+
+    return maxScore;
+}
+
+//compare each cluster centroid with every ground truth seqence using SmithWaterman algorithm. Write out best match with score
+void compareCentroidsWithGT(const std::vector<std::string>& centroids, const std::unordered_map<std::string, std::string>& gt_sequences) {
+    int idx=0;
+    for (const auto& centroid : centroids) {
+        int bestScore = std::numeric_limits<int>::min();
+        std::string bestGT_ID;
+
+        for (const auto& [gt_id, gt_seq] : gt_sequences) {
+            int score = smithWaterman(centroid, gt_seq);
+            if (score > bestScore) {
+                bestScore = score;
+                bestGT_ID = gt_id;
+            }
+        }
+
+        std::cout << "Cluster" << idx++ << " matched best with GT ID: " 
+                  << bestGT_ID << " (score: " << bestScore << "/498)\n"; //498 score is maximum that sw algorithm can give in our case
+    }
+}
+
+
+//parse ground truth and cluster files, then compare each cluster consensus to ground truth sequences
+void checkGroundTruth(fs::path path, int index){
+
+    auto groundTruthSequences = parseGT_File(path.string());
+    fs::path project_root = fs::current_path().parent_path();
+    fs::path directory = project_root /"data"/ "consensus_files";
+
+    std::vector<std::string> sequencesToCheck;
+    if(index == 29){
+      cout << "Checking J29.fasta" << endl;
+      sequencesToCheck = parse_fasta_sequences(directory / "J29.fasta");
+    }
+    else if(index == 30){
+      cout << "checking J30.fasta" << endl;
+      sequencesToCheck = parse_fasta_sequences(directory / "J30.fasta");
+    }
+    
+    compareCentroidsWithGT(sequencesToCheck, groundTruthSequences);
+
 }
 
 
@@ -441,7 +532,7 @@ int main(int argc, char **argv) {
     cerr << "Missing folder path/s!" << endl;
     return 1;
   }
-  string sampleFolder = argv[1];
+  string sampleFolder = argv[1]; 
   vector<fs::path> filesToParse = iterateDirectory(sampleFolder);
 
 
@@ -461,16 +552,6 @@ int main(int argc, char **argv) {
 
   //cluster_parameter_test(readingsList["J30"]);
 
-  //Get ground truth sequences
-  string GT_Folder = argv[2];
-  vector<fs::path> GT_files = iterateDirectory(GT_Folder);
-  std::unordered_map<std::string, std::string> GT_Sequences;
-  for (const auto& path : GT_files) {
-    auto partial = parseGT_File(path.string());
-    GT_Sequences.insert(partial.begin(), partial.end());
-  }
-
-
   //vector<vector<std::string>> GT_readingsList;
   /*
   vector<fs::path> GT_Files = iterateDirectory(GT_Folder);
@@ -485,9 +566,18 @@ int main(int argc, char **argv) {
     for (const auto& list: cluster_list) {
         cout<<list.second.size()<<endl;
     }
-//odavdje je moje
+
+  //generate .fasta files for every cluster in each sample file  
   writeCentroidsToFasta(cluster_list);
 
+  //check if we get good results
+  string GT_Folder = argv[2];
+  vector<fs::path> GT_files = iterateDirectory(GT_Folder);
+
+  int index = 29;
+  for (const auto& path : GT_files) {
+    checkGroundTruth(path, index++);
+  }
 
   return 0;
 
