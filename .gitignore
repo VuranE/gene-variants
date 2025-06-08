@@ -1,8 +1,8 @@
 
 /build/
-/samples/
-/manjePodataka/
-
+/data/consensus_files/
+/data/msa_files/
+/external/
 
 *.exe
 *.out

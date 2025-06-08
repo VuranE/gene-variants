@@ -59,32 +59,35 @@ vector<FastqRead> parseFile(const string& filename, size_t targetLength = 0){
 }
 
 
-vector<std::string> parseGT_File(const string& filename, size_t targetLength = 249){
-  vector<std::string> reads;
-  ifstream file(filename);
+std::unordered_map<std::string, std::string> parseGT_File(const std::string& filename, size_t targetLength = 249) {
+    std::unordered_map<std::string, std::string> id_to_sequence;
 
-  if(!file) {
-    cerr << "Error opening GT file: " << filename << endl;
-    return reads;
-  }
-  cout<< "parsing GT file: "<<filename << endl;
-
-
-
-  int n = 0;
-  string line;
-  while (getline(file, line)){
-    if (line[0] == '>')
-      continue;
-    if(line.length() == targetLength) {
-      reads.push_back(line);
-      n++;
+    std::ifstream file(filename);
+    if (!file) {
+        std::cerr << " Error opening GT file: " << filename << "\n";
+        return id_to_sequence;
     }
-  }
-  printf("n: %d\n",n);
 
-  return reads;
+    std::cout << "Parsing GT file: " << filename << "\n";
 
+    std::string line, current_id;
+    while (std::getline(file, line)) {
+        if (line.empty()) continue;
+
+        if (line[0] == '>') {
+            current_id = line.substr(1);
+            auto space_pos = current_id.find(' ');
+            if (space_pos != std::string::npos) {
+                current_id = current_id.substr(0, space_pos);  
+            }
+        } else {
+            if (!current_id.empty() && line.length() == targetLength) {
+                id_to_sequence[current_id] = line;
+            }
+        }
+    }
+
+    return id_to_sequence;
 }
 
 /*Function for getting filenames of sample reads. It takes path to directory with all fastq samples as parameter and returns vector<path> that
@@ -391,6 +394,48 @@ std::unordered_map<std::string, std::vector<std::vector<std::string>>>
 }
 
 
+void writeCentroidsToFasta(
+    const std::unordered_map<std::string, std::vector<std::vector<std::string>>>& cluster_list)
+{
+   fs::path project_root = fs::current_path().parent_path();
+    fs::path output_dir = project_root /"data"/ "consensus_files";
+
+    // Create output directory if it doesn't exist
+    bool created = fs::create_directories(output_dir);
+    if (!created) {
+        return;
+    }
+    std::cout << "Output directory path: " << output_dir << endl;
+    std::cout << "Directory created :) "<<endl;
+
+    for (const auto& sample_pair : cluster_list) {
+        const std::string& sample_id = sample_pair.first;
+        const std::vector<std::vector<std::string>>& clusters = sample_pair.second;
+
+        
+        std::string filename = output_dir / (sample_id + ".fasta");
+        std::ofstream outfile(filename);
+
+        if (!outfile) {
+            std::cerr << "Greška pri otvaranju fajla: " << filename << "\n";
+            continue;
+        }
+
+        int cluster_idx = 0;
+        for (const auto& cluster : clusters) {
+            std::string centroid = computeCentroid(cluster);
+            outfile << ">" << sample_id << "_cluster" << cluster_idx << "\n";
+            outfile << centroid << "\n";
+            ++cluster_idx;
+        }
+
+        outfile.close();
+        std::cout << "FASTA fajl napisan: " << filename << "\n";
+    }
+}
+
+
+
 int main(int argc, char **argv) {
   if (argc < 3) {
     cerr << "Missing folder path/s!" << endl;
@@ -416,11 +461,20 @@ int main(int argc, char **argv) {
 
   //cluster_parameter_test(readingsList["J30"]);
 
+  //Get ground truth sequences
   string GT_Folder = argv[2];
-  vector<std::string> GT_Sequences;
+  vector<fs::path> GT_files = iterateDirectory(GT_Folder);
+  std::unordered_map<std::string, std::string> GT_Sequences;
+  for (const auto& path : GT_files) {
+    auto partial = parseGT_File(path.string());
+    GT_Sequences.insert(partial.begin(), partial.end());
+  }
+
+
   //vector<vector<std::string>> GT_readingsList;
+  /*
   vector<fs::path> GT_Files = iterateDirectory(GT_Folder);
-  std::unordered_map<std::string, std::vector<std::string> > GT_readingsList = get_readingsList(GT_Files, 0);
+  std::unordered_map<std::string, std::vector<std::string> > GT_readingsList = get_readingsList(GT_Files, 0);*/
   //cout << "GT_readingsList size: " << GT_readingsList.size() << endl;
 
   generateMSA_Files(readingsList);
@@ -431,11 +485,9 @@ int main(int argc, char **argv) {
     for (const auto& list: cluster_list) {
         cout<<list.second.size()<<endl;
     }
+//odavdje je moje
+  writeCentroidsToFasta(cluster_list);
 
-  /*
-    POGLAVLJE 4.5
-    https://repozitorij.vef.unizg.hr/islandora/object/vef%3A641
-  */
 
   return 0;
 
