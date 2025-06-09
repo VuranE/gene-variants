@@ -424,40 +424,51 @@ std::vector<std::string> parse_fasta_sequences(const std::string& fasta_path) {
 
 /*creates directory for saving FASTA files. For each sample file this function calculates consensus sequence for all of the clusters,
  and saves them as FASTA files  */
-void writeCentroidsToFasta(const std::unordered_map<std::string, std::vector<std::vector<std::string>>>& cluster_list){
-  fs::path project_root = fs::current_path().parent_path();
-  fs::path output_dir = project_root /"data"/ "consensus_files";
+void writeCentroidsToFasta(const std::unordered_map<std::string, std::vector<std::vector<std::string>>>& cluster_list) {
+    fs::path project_root = fs::current_path().parent_path();
+    fs::path fasta_output_dir = project_root / "data" / "consensus_files";
+    fs::path clusters_output_dir = project_root / "data" / "clusters_txt";
 
-    bool created = fs::create_directories(output_dir);
-    if (!created) {
-        return;
-    }
-    
-    for (const auto& sample_pair : cluster_list) {
-        const std::string& sample_id = sample_pair.first;
-        const std::vector<std::vector<std::string>>& clusters = sample_pair.second;
+    //create directories if they dont exist
+    fs::create_directories(fasta_output_dir);
+    fs::create_directories(clusters_output_dir);
 
-        
-        std::string filename = output_dir / (sample_id + ".fasta");
-        std::ofstream outfile(filename);
-
-        if (!outfile) {
-            std::cerr << "Greška pri otvaranju fajla: " << filename << "\n";
+    for (const auto& [sample_id, clusters] : cluster_list) {
+        // open .fasta file to get centroid sequences
+        std::ofstream fasta_out(fasta_output_dir / (sample_id + ".fasta"));
+        if (!fasta_out.is_open()) {
+            std::cerr << "Cannot write to FASTA file for sample " << sample_id << std::endl;
             continue;
         }
 
-        int cluster_idx = 0;
-        for (const auto& cluster : clusters) {
-            std::string centroid = computeCentroid(cluster);
-            outfile << ">" << sample_id << "_cluster" << cluster_idx << "\n";
-            outfile << centroid << "\n";
-            ++cluster_idx;
+        // open .txt file to write all sequences of each cluster
+        std::ofstream cluster_out(clusters_output_dir / (sample_id + ".txt"));
+        if (!cluster_out.is_open()) {
+            std::cerr << "Cannot write to cluster TXT file for sample " << sample_id << std::endl;
+            continue;
         }
 
-        outfile.close();
-       
+        for (size_t i = 0; i < clusters.size(); ++i) {
+            const auto& cluster = clusters[i];
+            std::string centroid = computeCentroid(cluster);
+
+            // write centroid to .fasta
+            fasta_out << ">cluster" << i + 1 << "\n" << centroid << "\n";
+
+            // write all sequences of each cluster to .txt
+            cluster_out << "cluster" << i + 1 << "\n";
+            for (const auto& seq : cluster) {
+                cluster_out << seq << "\n";
+            }
+            cluster_out << "\n";
+        }
+
+        fasta_out.close();
+        cluster_out.close();
+        std::cout << "Wrote centroids and cluster sequences for " << sample_id << "\n";
     }
 }
+
 
 
 int smithWaterman(const std::string& seq1, const std::string& seq2, int match = 2, int mismatch = -1, int gap = -1) {
