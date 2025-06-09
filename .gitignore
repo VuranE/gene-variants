@@ -3,6 +3,8 @@
 /data/consensus_files/
 /data/msa_files/
 /external/
+/data/clusters_txt/
+
 
 *.exe
 *.out
