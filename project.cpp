@@ -103,9 +103,10 @@ vector<fs::path> iterateDirectory(const string& dirPath){
   }
 
 
-//use spoa to generate graph from which consensus and MSA are calculated
+//LM
+//use spoa library to generate graph from which consensus and MSA are calculated
 spoa::Graph generateGraph(const vector<string>& reads){
-
+  
   cout << "generating graph..." << endl;
   auto alignmentEngine = spoa::AlignmentEngine::Create(
       spoa::AlignmentType::kNW, 0, -1, -100);
@@ -120,7 +121,10 @@ spoa::Graph generateGraph(const vector<string>& reads){
 }
 
 
+//LM
+//returns hamming distance between 2 sequences
 size_t hammingDistance(const string& a, const string& b) {
+
     if (a.size() != b.size()) {
         throw invalid_argument("Sequences must have equal length for Hamming distance");
     }
@@ -131,8 +135,10 @@ size_t hammingDistance(const string& a, const string& b) {
     return dist;
 }
 
-//calculates consensus sequence of given sequences
+//LM
+//calculates consensus sequence (used as centroid) of given sequences 
 string computeCentroid(const vector<string>& sequences) {
+
     if (sequences.empty()) return "";
 
     auto alignment_engine = spoa::AlignmentEngine::Create(
@@ -146,11 +152,11 @@ string computeCentroid(const vector<string>& sequences) {
     return graph.GenerateConsensus();
 }
 
+//LM
+//iterates over readings and generates clusters
 
-//iterates over reading and generates clusters
 //k = number of missmatches tolerated for one cluster
 //s = min nuber of cluster members
-
 vector<vector<string> > clusteringAlgorithm(const vector<string> &sequences, size_t k, size_t minClusterSize) {
   
   vector<vector<string> > clusters;
@@ -184,8 +190,10 @@ vector<vector<string> > clusteringAlgorithm(const vector<string> &sequences, siz
   return filtered;
 }
 
-/*function for deciding best Hamming distance for the project*/
+//LM
+//tests appropriate hamming distance used for calculating clusters
 void cluster_parameter_test(const vector<string> & readingsList) {
+
   for (size_t k = 0; k < 50; ++k) {
     vector<vector<string>> clusters = clusteringAlgorithm(readingsList, k, 0);
       cout<<k<<","<<clusters.size()<<endl;
@@ -193,9 +201,13 @@ void cluster_parameter_test(const vector<string> & readingsList) {
   }
 }
 
+
+//LM
+//returns map where key is sample ID and value is a vector of corresponding sequence string
 unordered_map<string, vector<string>> get_readingsList(const vector<fs::path> & filesToParse, int targetLength = 0) {
   vector<string> chosenSequences;
-  unordered_map<string, vector<string>> readingsList;
+  unordered_map<std::string, vector<string>> readingsList;
+
   for (const auto& filePath : filesToParse) {
     string filename = filePath.filename().string();
     string sample_id = filename.substr(0, filename.find("_"));
@@ -213,15 +225,17 @@ unordered_map<string, vector<string>> get_readingsList(const vector<fs::path> & 
   return readingsList;
 }
 
-//function which generates corresponeding .msa files - replaces every sequence in sample with globally alligned sequence - does this for every sample
+//LM
+//function which generates corresponding .msa files - replaces every sequence in sample with globally aligned sequence - does this for every sample
 void generateMSA_Files(const unordered_map<string, vector<string>> & readingsList) {
+
     // Go up two levels from current directory to get to project root
     fs::path project_root = fs::current_path().parent_path();
     fs::path output_dir = project_root /"data"/ "msa_files";
 
     // Create output directory if it doesn't exist
-    bool created = fs::create_directories(output_dir);
-    if (!created) {
+    bool createdNewly = fs::create_directories(output_dir);
+    if (!createdNewly && !fs::is_empty(output_dir)) {
         return;
     }
     cout << "Output directory path: " << output_dir << endl;
@@ -253,6 +267,7 @@ void generateMSA_Files(const unordered_map<string, vector<string>> & readingsLis
     }
 }
 
+//LM
 //creates clusters list for each sample (takes data from msa file)
 unordered_map<string, vector<vector<string>>>
  create_clusters(size_t maxDist = 10, size_t minClusterSize = 5) {
@@ -435,11 +450,11 @@ void checkGroundTruth(fs::path path, int index){
     vector<string> sequencesToCheck;
     if(index == 29){
       cout << "Checking J29.fasta" << endl;
-      sequencesToCheck = parse_fasta_sequences(directory / "J29.fasta");
+      sequencesToCheck = parse_fasta_sequences((directory / "J29.fasta").string());
     }
     else if(index == 30){
       cout << "checking J30.fasta" << endl;
-      sequencesToCheck = parse_fasta_sequences(directory / "J30.fasta");
+      sequencesToCheck = parse_fasta_sequences((directory / "J30.fasta").string());
     }
     
     compareCentroidsWithGT(sequencesToCheck, groundTruthSequences);
