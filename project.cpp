@@ -22,7 +22,8 @@ struct FastqRead {
 
 /*Function for parsing FASTQ files.
   It takes filename and desired length of sequences, parses whole file, and only returns vector<FastqRead> only containing sequences of 
-  desired length.*/
+  desired length. 
+  EV*/
 vector<FastqRead> parseFile(const string& filename, size_t targetLength = 0){
   vector<FastqRead> reads;
   ifstream file(filename);
@@ -50,33 +51,31 @@ vector<FastqRead> parseFile(const string& filename, size_t targetLength = 0){
     }
   }
   
-  if (reads.empty()) {
-    cerr << "Error parsing file: " << filename <<"for target length:"<<targetLength<<endl;
-  }
   return reads;
 
 }
 
-/*Function for parsing ground truth files. Maps ground_truth_sequence_id to ground_truth_sequence for later use*/
-std::unordered_map<std::string, std::string> parseGT_File(const std::string& filename, size_t targetLength = 249) {
-    std::unordered_map<std::string, std::string> id_to_sequence;
+/*Function for parsing ground truth files. Maps ground_truth_sequence_id to ground_truth_sequence for later use
+EV*/
+unordered_map<string, string> parseGT_File(const string& filename, size_t targetLength = 249) {
+    unordered_map<string, string> id_to_sequence;
 
-    std::ifstream file(filename);
+    ifstream file(filename);
     if (!file) {
-        std::cerr << " Error opening GT file: " << filename << "\n";
+        cerr << " Error opening GT file: " << filename << "\n";
         return id_to_sequence;
     }
 
-    std::cout << "Parsing GT file: " << filename << "\n";
+    cout << "Parsing GT file: " << filename << "\n";
 
-    std::string line, current_id;
-    while (std::getline(file, line)) {
+    string line, current_id;
+    while (getline(file, line)) {
         if (line.empty()) continue;
 
         if (line[0] == '>') {
             current_id = line.substr(1);
             auto space_pos = current_id.find(' ');
-            if (space_pos != std::string::npos) {
+            if (space_pos != string::npos) {
                 current_id = current_id.substr(0, space_pos);  
             }
         } else {
@@ -90,11 +89,12 @@ std::unordered_map<std::string, std::string> parseGT_File(const std::string& fil
 }
 
 /*Function for getting filenames of sample reads. It takes path to directory with all fastq samples as parameter and returns vector<path> that
-  includes all desired file paths*/
+  includes all desired file paths
+  EV*/
 vector<fs::path> iterateDirectory(const string& dirPath){
     vector<fs::path> files;
     for(const auto& entry : fs::directory_iterator(dirPath)){
-      if(entry.path().extension() == ".fastq" || entry.path().extension() == ".fasta" ){//or entry.path().extension() == ".fasta"){ //take into consideration only fastq or fasta files
+      if(entry.path().extension() == ".fastq" || entry.path().extension() == ".fasta" ){//take into consideration only fastq or fasta files
         if(entry.path().filename().string().compare(0, 1, "J") == 0) //take into consideration only files that starts with "J", indicating deer samples (can be changed for different purposes)
           files.push_back(entry.path());
       }
@@ -102,10 +102,11 @@ vector<fs::path> iterateDirectory(const string& dirPath){
     return files;
   }
 
+
 //LM
 //use spoa library to generate graph from which consensus and MSA are calculated
-spoa::Graph generateGraph(const vector<std::string>& reads){
-  std::cout << "number of reads: " << reads.size() << std::endl;
+spoa::Graph generateGraph(const vector<string>& reads){
+  
   cout << "generating graph..." << endl;
   auto alignmentEngine = spoa::AlignmentEngine::Create(
       spoa::AlignmentType::kNW, 0, -1, -100);
@@ -119,11 +120,13 @@ spoa::Graph generateGraph(const vector<std::string>& reads){
   return graph;
 }
 
+
 //LM
 //returns hamming distance between 2 sequences
-size_t hammingDistance(const std::string& a, const std::string& b) {
+size_t hammingDistance(const string& a, const string& b) {
+
     if (a.size() != b.size()) {
-        throw std::invalid_argument("Sequences must have equal length for Hamming distance");
+        throw invalid_argument("Sequences must have equal length for Hamming distance");
     }
     size_t dist = 0;
     for (size_t i = 0; i < a.size(); ++i) {
@@ -131,9 +134,11 @@ size_t hammingDistance(const std::string& a, const std::string& b) {
     }
     return dist;
 }
+
 //LM
-//calculates consensus sequence (used as centroid) of given sequences TODO: mby makni kad ne koristimo
-std::string computeCentroid(const std::vector<std::string>& sequences) {
+//calculates consensus sequence (used as centroid) of given sequences 
+string computeCentroid(const vector<string>& sequences) {
+
     if (sequences.empty()) return "";
 
     auto alignment_engine = spoa::AlignmentEngine::Create(
@@ -146,102 +151,10 @@ std::string computeCentroid(const std::vector<std::string>& sequences) {
     }
     return graph.GenerateConsensus();
 }
-//LM
-//clustering function TODO: mby makni kad ne koristimo
-std::vector<std::vector<std::string>> clusteringWithCentroid(
-    const std::vector<std::string>& sequences,
-    size_t maxDist,
-    size_t minClusterSize)
-{
-    if (sequences.empty()) return {};
-
-    // Verify uniform sequence length
-    const size_t ref_len = sequences[0].size();
-    for (const auto& seq : sequences) {
-        if (seq.size() != ref_len) {
-            throw std::invalid_argument("All sequences must be of equal length");
-        }
-    }
-
-    // Initial clustering using first sequence as centroid
-    std::vector<std::vector<std::string>> clusters;
-    std::vector<std::string> centroids;
-
-    for (const auto& seq : sequences) {
-        bool assigned = false;
-        for (size_t i = 0; i < centroids.size(); ++i) {
-            if (hammingDistance(seq, centroids[i]) <= maxDist) {
-                clusters[i].push_back(seq);
-                assigned = true;
-                break;
-            }
-        }
-        if (!assigned) {
-            clusters.push_back({seq});
-            centroids.push_back(seq);
-        }
-    }
-
-    // Batch centroid recomputation
-    for (size_t i = 0; i < clusters.size(); ++i) {
-        centroids[i] = computeCentroid(clusters[i]);
-    }
-
-    // Refinement iterations (max 5)
-    const size_t MAX_ITER = 5;
-    for (size_t iter = 0; iter < MAX_ITER; ++iter) {
-        std::vector<std::vector<std::string>> new_clusters(centroids.size());
-
-        // Assign sequences to closest centroid
-        for (const auto& seq : sequences) {
-            size_t min_dist = maxDist + 1;
-            int best_index = -1;
-
-            for (size_t i = 0; i < centroids.size(); ++i) {
-                size_t dist = hammingDistance(seq, centroids[i]);
-                if (dist < min_dist) {
-                    min_dist = dist;
-                    best_index = i;
-                }
-            }
-
-            if (min_dist <= maxDist) {
-                new_clusters[best_index].push_back(seq);
-            } else {
-                new_clusters.push_back({seq});
-            }
-        }
-
-        // Remove empty clusters
-        std::vector<std::vector<std::string>> non_empty;
-        for (auto& cluster : new_clusters) {
-            if (!cluster.empty()) {
-                non_empty.push_back(std::move(cluster));
-            }
-        }
-
-        // Update clusters and centroids
-        clusters = non_empty;
-        centroids.clear();
-        for (auto& cluster : clusters) {
-            centroids.push_back(computeCentroid(cluster));
-        }
-    }
-
-    // Filter small clusters
-    std::vector<std::vector<std::string>> result;
-    for (auto& cluster : clusters) {
-        if (cluster.size() >= minClusterSize) {
-            result.push_back(std::move(cluster));
-        }
-    }
-
-    return result;
-}
-
 
 //LM
 //iterates over readings and generates clusters
+
 //k = number of missmatches tolerated for one cluster
 //s = min nuber of cluster members
 vector<vector<string> > clusteringAlgorithm(const vector<string> &sequences, size_t k, size_t minClusterSize) {
@@ -269,41 +182,40 @@ vector<vector<string> > clusteringAlgorithm(const vector<string> &sequences, siz
 
   // Filter out small clusters
   vector<vector<string> > filtered;
-  //cout << "Unfiltered clusters count: " << clusters.size() << endl;
   for (const auto& cluster : clusters){
-    //cout << "  Cluster size: " << cluster.size() << endl;
     if (cluster.size() > minClusterSize)
       filtered.push_back(cluster);
   }
   
   return filtered;
 }
+
 //LM
 //tests appropriate hamming distance used for calculating clusters
-void cluster_parameter_test(const vector<std::string> & readingsList) {
+void cluster_parameter_test(const vector<string> & readingsList) {
+
   for (size_t k = 0; k < 50; ++k) {
     vector<vector<string>> clusters = clusteringAlgorithm(readingsList, k, 0);
       cout<<k<<","<<clusters.size()<<endl;
-      //cout<<"Cluster number for k="<<k<<" -> "<<clusters.size()<<endl;
+      
   }
 }
 
+
 //LM
 //returns map where key is sample ID and value is a vector of corresponding sequence string
-std::unordered_map<std::string, std::vector<std::string>> get_readingsList(const vector<fs::path> & filesToParse, int targetLength = 0) {
-  vector<std::string> chosenSequences;
-  std::unordered_map<std::string, std::vector<std::string>> readingsList;
+unordered_map<string, vector<string>> get_readingsList(const vector<fs::path> & filesToParse, int targetLength = 0) {
+  vector<string> chosenSequences;
+  unordered_map<std::string, vector<string>> readingsList;
+
   for (const auto& filePath : filesToParse) {
     string filename = filePath.filename().string();
     string sample_id = filename.substr(0, filename.find("_"));
-    //cout << "parsing file " << filePath<<" for sample: "<<sample_id<<endl;
+
     vector<FastqRead> reads = parseFile(filePath.string(), targetLength);//filter for deer sequences of length 296
-      vector<std::string> chosenSequences;
+      vector<string> chosenSequences;
       for (const auto& read : reads) {
       chosenSequences.push_back(read.sequence);
-    }
-    if ( sample_id=="J30") {
-      cout<<"J30 sample size: "<<chosenSequences.size()<<endl;
     }
     readingsList[sample_id]=chosenSequences;
     chosenSequences.clear();
@@ -312,9 +224,11 @@ std::unordered_map<std::string, std::vector<std::string>> get_readingsList(const
 
   return readingsList;
 }
+
 //LM
 //function which generates corresponding .msa files - replaces every sequence in sample with globally aligned sequence - does this for every sample
-void generateMSA_Files(const unordered_map<std::string, std::vector<std::string>> & readingsList) {
+void generateMSA_Files(const unordered_map<string, vector<string>> & readingsList) {
+
     // Go up two levels from current directory to get to project root
     fs::path project_root = fs::current_path().parent_path();
     fs::path output_dir = project_root /"data"/ "msa_files";
@@ -324,8 +238,8 @@ void generateMSA_Files(const unordered_map<std::string, std::vector<std::string>
     if (!createdNewly && !fs::is_empty(output_dir)) {
         return;
     }
-    std::cout << "Output directory path: " << output_dir << endl;
-    std::cout << "Directory created :) "<<endl;
+    cout << "Output directory path: " << output_dir << endl;
+    cout << "Directory created :) "<<endl;
 
     for (auto const& reading: readingsList) {
         string sample_id = reading.first;
@@ -339,9 +253,9 @@ void generateMSA_Files(const unordered_map<std::string, std::vector<std::string>
         fs::path output_path = output_dir / (sample_id + ".msa");
 
         // Write MSA to file
-        std::ofstream outfile(output_path);
+        ofstream outfile(output_path);
         if (!outfile.is_open()) {
-            std::cerr << "Error opening file: " << output_path << std::endl;
+            cerr << "Error opening file: " << output_path << endl;
             continue;
         }
         // Write each sequence in the MSA to separate line
@@ -349,36 +263,36 @@ void generateMSA_Files(const unordered_map<std::string, std::vector<std::string>
             outfile << aligned_seq << '\n';
         }
         outfile.close();
-        std::cout << "Created MSA file: " << sample_id << ".msa" << " with " << msa.size() << " sequences\n";
+        cout << "Created MSA file: " << sample_id << ".msa" << " with " << msa.size() << " sequences\n";
     }
 }
 
 //LM
 //creates clusters list for each sample (takes data from msa file)
-std::unordered_map<std::string, std::vector<std::vector<std::string>>>
+unordered_map<string, vector<vector<string>>>
  create_clusters(size_t maxDist = 10, size_t minClusterSize = 5) {
-    std::unordered_map<std::string, std::vector<std::vector<std::string>>>
+    unordered_map<string, vector<vector<string>>>
  clustered_samples;
 
 
     fs::path project_root = fs::current_path().parent_path();
     fs::path input_dir = project_root /"data"/ "msa_files";
     if (!fs::exists(input_dir)) {
-        std::cerr << "Output directory does not exist.\n";
+        cerr << "Output directory does not exist.\n";
         return clustered_samples;
     }
 
     for (const auto& entry : fs::directory_iterator(input_dir)) {//iterates over each directory
         if (entry.path().extension() == ".msa") {
-            std::ifstream infile(entry.path());
+            ifstream infile(entry.path());
             if (!infile.is_open()) {
-                std::cerr << "Failed to open " << entry.path() << "\n";
+                cerr << "Failed to open " << entry.path() << "\n";
                 continue;
             }
 
-            std::vector<std::string> sequences;
-            std::string line;
-            while (std::getline(infile, line)) {
+            vector<string> sequences;
+            string line;
+            while (getline(infile, line)) {
                 if (!line.empty())
                     sequences.push_back(line);
             }
@@ -389,7 +303,7 @@ std::unordered_map<std::string, std::vector<std::vector<std::string>>>
             auto clusters = clusteringAlgorithm(sequences, maxDist, minClusterSize);
 
             // Get sample ID from filename
-            std::string sample_id = entry.path().stem().string(); // e.g., "J30"
+            string sample_id = entry.path().stem().string(); // e.g., "J30"
 
             clustered_samples[sample_id] = clusters;
         }
@@ -400,15 +314,16 @@ std::unordered_map<std::string, std::vector<std::vector<std::string>>>
 
 
 //function for parsing .fasta file that contains centroids of all clusters. Returns vector<string> containing all sequences from given file
-std::vector<std::string> parse_fasta_sequences(const std::string& fasta_path) {
-    std::vector<std::string> sequences;
-    std::ifstream file(fasta_path);
+//EV
+vector<string> parse_fasta_sequences(const string& fasta_path) {
+    vector<string> sequences;
+    ifstream file(fasta_path);
     if (!file.is_open()) {
-        throw std::runtime_error("Cannot open FASTA file: " + fasta_path);
+        throw runtime_error("Cannot open FASTA file: " + fasta_path);
     }
 
-    std::string line, current_seq;
-    while (std::getline(file, line)) {
+    string line, current_seq;
+    while (getline(file, line)) {
         if (line.empty()) continue;
         if (line[0] == '>') {
             if (!current_seq.empty()) {
@@ -428,34 +343,38 @@ std::vector<std::string> parse_fasta_sequences(const std::string& fasta_path) {
 
 
 /*creates directory for saving FASTA files. For each sample file this function calculates consensus sequence for all of the clusters,
- and saves them as FASTA files  */
-void writeCentroidsToFasta(const std::unordered_map<std::string, std::vector<std::vector<std::string>>>& cluster_list) {
+ and saves them as FASTA files  
+ EV*/
+void writeCentroidsToFasta(const unordered_map<string, vector<vector<string>>>& cluster_list) {
     fs::path project_root = fs::current_path().parent_path();
     fs::path fasta_output_dir = project_root / "data" / "consensus_files";
     fs::path clusters_output_dir = project_root / "data" / "clusters_txt";
 
     //create directories if they dont exist
-    fs::create_directories(fasta_output_dir);
+    bool created = fs::create_directories(fasta_output_dir);
     fs::create_directories(clusters_output_dir);
+    if (!created) {
+        return;
+    }
 
     for (const auto& [sample_id, clusters] : cluster_list) {
         // open .fasta file to get centroid sequences
-        std::ofstream fasta_out(fasta_output_dir / (sample_id + ".fasta"));
+        ofstream fasta_out(fasta_output_dir / (sample_id + ".fasta"));
         if (!fasta_out.is_open()) {
-            std::cerr << "Cannot write to FASTA file for sample " << sample_id << std::endl;
+            cerr << "Cannot write to FASTA file for sample " << sample_id << endl;
             continue;
         }
 
         // open .txt file to write all sequences of each cluster
-        std::ofstream cluster_out(clusters_output_dir / (sample_id + ".txt"));
+        ofstream cluster_out(clusters_output_dir / (sample_id + ".txt"));
         if (!cluster_out.is_open()) {
-            std::cerr << "Cannot write to cluster TXT file for sample " << sample_id << std::endl;
+            cerr << "Cannot write to cluster TXT file for sample " << sample_id << endl;
             continue;
         }
 
         for (size_t i = 0; i < clusters.size(); ++i) {
             const auto& cluster = clusters[i];
-            std::string centroid = computeCentroid(cluster);
+            string centroid = computeCentroid(cluster);
 
             // write centroid to .fasta
             fasta_out << ">cluster" << i + 1 << "\n" << centroid << "\n";
@@ -470,29 +389,29 @@ void writeCentroidsToFasta(const std::unordered_map<std::string, std::vector<std
 
         fasta_out.close();
         cluster_out.close();
-        std::cout << "Wrote centroids and cluster sequences for " << sample_id << "\n";
+        cout << "Wrote centroids and cluster sequences for " << sample_id << "\n";
     }
 }
 
-
-
-int smithWaterman(const std::string& seq1, const std::string& seq2, int match = 2, int mismatch = -1, int gap = -1) {
+//implementation of Smith-Waterman algorithm
+//EV
+int smithWaterman(const string& seq1, const string& seq2, int match = 2, int mismatch = -1, int gap = -1) {
     int m = seq1.size();
     int n = seq2.size();
-    std::vector<std::vector<int>> dp(m + 1, std::vector<int>(n + 1, 0));
+    vector<vector<int>> dp(m + 1, vector<int>(n + 1, 0));
 
     int maxScore = 0;
 
     for (int i = 1; i <= m; ++i) {
         for (int j = 1; j <= n; ++j) {
             int score = (seq1[i - 1] == seq2[j - 1]) ? match : mismatch;
-            dp[i][j] = std::max({
+            dp[i][j] = max({
                 0,
                 dp[i - 1][j - 1] + score,
                 dp[i - 1][j] + gap,
                 dp[i][j - 1] + gap
             });
-            maxScore = std::max(maxScore, dp[i][j]);
+            maxScore = max(maxScore, dp[i][j]);
         }
     }
 
@@ -500,11 +419,12 @@ int smithWaterman(const std::string& seq1, const std::string& seq2, int match = 
 }
 
 //compare each cluster centroid with every ground truth seqence using SmithWaterman algorithm. Write out best match with score
-void compareCentroidsWithGT(const std::vector<std::string>& centroids, const std::unordered_map<std::string, std::string>& gt_sequences) {
+//EV
+void compareCentroidsWithGT(const vector<string>& centroids, const unordered_map<string, string>& gt_sequences) {
     int idx=0;
     for (const auto& centroid : centroids) {
-        int bestScore = std::numeric_limits<int>::min();
-        std::string bestGT_ID;
+        int bestScore = numeric_limits<int>::min();
+        string bestGT_ID;
 
         for (const auto& [gt_id, gt_seq] : gt_sequences) {
             int score = smithWaterman(centroid, gt_seq);
@@ -514,20 +434,20 @@ void compareCentroidsWithGT(const std::vector<std::string>& centroids, const std
             }
         }
 
-        std::cout << "Cluster" << idx++ << " matched best with GT ID: " 
+        cout << "Cluster" << idx++ << " matched best with GT ID: " 
                   << bestGT_ID << " (score: " << bestScore << "/498)\n"; //498 score is maximum that sw algorithm can give in our case
     }
 }
 
-
 //parse ground truth and cluster files, then compare each cluster consensus to ground truth sequences
+//EV
 void checkGroundTruth(fs::path path, int index){
 
     auto groundTruthSequences = parseGT_File(path.string());
     fs::path project_root = fs::current_path().parent_path();
     fs::path directory = project_root /"data"/ "consensus_files";
 
-    std::vector<std::string> sequencesToCheck;
+    vector<string> sequencesToCheck;
     if(index == 29){
       cout << "Checking J29.fasta" << endl;
       sequencesToCheck = parse_fasta_sequences((directory / "J29.fasta").string());
@@ -538,10 +458,7 @@ void checkGroundTruth(fs::path path, int index){
     }
     
     compareCentroidsWithGT(sequencesToCheck, groundTruthSequences);
-
 }
-
-
 
 int main(int argc, char **argv) {
   if (argc < 3) {
@@ -551,38 +468,12 @@ int main(int argc, char **argv) {
   string sampleFolder = argv[1]; 
   vector<fs::path> filesToParse = iterateDirectory(sampleFolder);
 
-
-  std::unordered_map<std::string, std::vector<std::string> > readingsList = get_readingsList(filesToParse, 296);
-
-  /*
-  cout << "readingsList size: " << readingsList.size() << endl;
-  for (const auto& pair : readingsList) {
-    cout << "readings size: " << pair.second.size() << endl;
-  }
-  cout << "readingsList[0]" << endl;
-
-
-  for (const auto& a: readingsList[0]) {
-    cout << a <<"||"<< endl;
-  }*/
-
-  //cluster_parameter_test(readingsList["J30"]);
-
-  //vector<vector<std::string>> GT_readingsList;
-  /*
-  vector<fs::path> GT_Files = iterateDirectory(GT_Folder);
-  std::unordered_map<std::string, std::vector<std::string> > GT_readingsList = get_readingsList(GT_Files, 0);*/
-  //cout << "GT_readingsList size: " << GT_readingsList.size() << endl;
+  unordered_map<string, vector<string> > readingsList = get_readingsList(filesToParse, 296);
 
   generateMSA_Files(readingsList);
     //map with sample id as key and cluster list ad value
-    std::unordered_map<std::string, std::vector<std::vector<std::string>> > cluster_list = create_clusters(10, 0);
-    cout<<"cluster_list size: "<<cluster_list.size()<<endl;
-    cout<<"cluster lists sizes:"<<endl;
-    for (const auto& list: cluster_list) {
-        cout<<list.second.size()<<endl;
-    }
-
+    unordered_map<string, vector<vector<string>> > cluster_list = create_clusters(10, 0);
+  
   //generate .fasta files for every cluster in each sample file  
   writeCentroidsToFasta(cluster_list);
 
