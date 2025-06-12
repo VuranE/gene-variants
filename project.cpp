@@ -7,10 +7,35 @@
 #include <regex>
 #include <stdexcept>
 #include <utility>
+#include <chrono>
+#include <windows.h>
+#include <psapi.h>
+
+
 #include "spoa/spoa.hpp"
 
 using namespace std;
 namespace fs = filesystem;
+
+size_t getCurrentRSS() {
+#if defined(_WIN32)
+    PROCESS_MEMORY_COUNTERS info;
+    GetProcessMemoryInfo(GetCurrentProcess(), &info, sizeof(info));
+    return info.WorkingSetSize / 1024;
+#elif defined(__linux__)
+    std::ifstream status_file("/proc/self/status");
+    std::string line;
+    while (std::getline(status_file, line)) {
+        if (line.rfind("VmRSS:", 0) == 0) {
+            std::string value = line.substr(6);
+            return std::stoul(value) * 1;
+        }
+    }
+    return 0;
+#else
+    return 0; // nije podržano
+#endif
+}
 
 struct FastqRead {
   string id;
@@ -461,6 +486,9 @@ void checkGroundTruth(fs::path path, int index){
 }
 
 int main(int argc, char **argv) {
+    auto start = chrono::high_resolution_clock::now();
+    size_t mem_start = getCurrentRSS();
+
   if (argc < 3) {
     cerr << "Missing folder path/s!" << endl;
     return 1;
@@ -485,6 +513,13 @@ int main(int argc, char **argv) {
   for (const auto& path : GT_files) {
     checkGroundTruth(path, index++);
   }
+
+    auto end = chrono::high_resolution_clock::now();
+    auto duration = chrono::duration_cast<chrono::milliseconds>(end - start);
+    std::cout << "Execution time: " << duration.count() << " ms" << std::endl;
+
+    size_t mem_end = getCurrentRSS();
+    std::cout << "Memory cost: " << (mem_end - mem_start) << " KB" << std::endl;
 
   return 0;
 
