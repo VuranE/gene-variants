@@ -8,8 +8,7 @@
 #include <stdexcept>
 #include <utility>
 #include <chrono>
-#include <windows.h>
-#include <psapi.h>
+
 
 
 #include "spoa/spoa.hpp"
@@ -18,24 +17,21 @@ using namespace std;
 namespace fs = filesystem;
 
 size_t getCurrentRSS() {
-#if defined(_WIN32)
-    PROCESS_MEMORY_COUNTERS info;
-    GetProcessMemoryInfo(GetCurrentProcess(), &info, sizeof(info));
-    return info.WorkingSetSize / 1024;
-#elif defined(__linux__)
-    std::ifstream status_file("/proc/self/status");
-    std::string line;
-    while (std::getline(status_file, line)) {
+#if defined(__linux__)
+    ifstream status_file("/proc/self/status");
+    string line;
+    while (getline(status_file, line)) {
         if (line.rfind("VmRSS:", 0) == 0) {
-            std::string value = line.substr(6);
-            return std::stoul(value) * 1;
+            istringstream iss(line);
+            string key, value, unit;
+            iss >> key >> value >> unit;
+            return stoul(value); // KB
         }
     }
-    return 0;
-#else
-    return 0; // nije podržano
 #endif
+    return 0;
 }
+
 
 struct FastqRead {
   string id;
